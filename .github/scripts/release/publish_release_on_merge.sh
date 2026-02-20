@@ -4,12 +4,17 @@ set -euo pipefail
 HEAD_REF="${HEAD_REF:?HEAD_REF is required}"
 REPO="${REPO:?REPO is required}"
 
-if [[ ! "${HEAD_REF}" =~ ^release/(v?[0-9]{6}\.[0-9]+\.[0-9]+)$ ]]; then
-  echo "PR head branch '${HEAD_REF}' is not a release branch; skipping."
+matched_version=""
+if [[ "${HEAD_REF}" =~ ^release/(v?[0-9]{6}\.[0-9]+\.[0-9]+)$ ]]; then
+  matched_version="${BASH_REMATCH[1]}"
+elif [[ "${HEAD_REF}" =~ ^merge/release/(v?[0-9]{6}\.[0-9]+\.[0-9]+)$ ]]; then
+  matched_version="${BASH_REMATCH[1]}"
+else
+  echo "PR head branch '${HEAD_REF}' is not a supported release branch; skipping."
+  echo "Supported patterns: release/vYYYYMM.X.Y and merge/release/YYYYMM.X.Y"
   exit 0
 fi
 
-matched_version="${BASH_REMATCH[1]}"
 release_line="${matched_version#v}"
 release_line="v${release_line}"
 echo "Publishing release line: ${release_line}"
