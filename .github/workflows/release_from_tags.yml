@@ -44,6 +44,11 @@ jobs:
       group: release-publish-${{ github.event.pull_request.head.ref }}
       cancel-in-progress: false
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Publish existing draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
