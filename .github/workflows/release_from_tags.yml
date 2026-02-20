@@ -4,6 +4,21 @@ on:
   push:
     tags:
       - 'v*-rc.*'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run"
+        required: true
+        type: choice
+        options:
+          - upsert_draft
+          - publish_release
+      tag:
+        description: "Tag for draft upsert (example: v202602.0.3-rc.1)"
+        required: false
+      release_line:
+        description: "Release line for manual publish (example: v202602.0.3)"
+        required: false
   pull_request:
     types: [closed]
     branches:
@@ -17,7 +32,7 @@ permissions:
 jobs:
   upsert_draft_release:
     name: Upsert Draft Release
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'upsert_draft')
     runs-on: ubuntu-latest
     concurrency:
       group: release-upsert-${{ github.ref_name }}
@@ -31,14 +46,14 @@ jobs:
       - name: Create or update draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
           REPO: ${{ github.repository }}
         shell: bash
         run: ./.github/scripts/release/upsert_draft_release.sh
 
   publish_release_on_merge:
     name: Publish Release On Merge
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'publish_release')
     runs-on: ubuntu-latest
     concurrency:
       group: release-publish-${{ github.event.pull_request.head.ref }}
@@ -54,5 +69,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          RELEASE_LINE: ${{ github.event.inputs.release_line }}
         shell: bash
         run: ./.github/scripts/release/publish_release_on_merge.sh

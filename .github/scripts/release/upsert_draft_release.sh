@@ -4,7 +4,7 @@ set -euo pipefail
 TAG="${TAG:?TAG is required}"
 REPO="${REPO:?REPO is required}"
 
-if [[ ! "$TAG" =~ ^v[0-9]{6}\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+if [[ ! "$TAG" =~ ^v[0-9]{4}(0[1-9]|1[0-2])\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
   echo "Tag '$TAG' does not match release-candidate format, skipping."
   exit 0
 fi
@@ -43,10 +43,39 @@ fi
 
 notes_body="$(gh api -X POST "repos/${REPO}/releases/generate-notes" --input - <<<"${payload}" | jq -r '.body')"
 
-existing_release_id="$(gh api "repos/${REPO}/releases?per_page=100" | jq -r --arg line "${release_line}" '
-  map(select(.name == $line))
-  | .[0].id // empty
+all_releases="$(gh api --paginate "repos/${REPO}/releases?per_page=100" | jq -s 'add')"
+
+candidates_json="$(echo "${all_releases}" | jq --arg line "${release_line}" '
+  [
+    .[]
+    | select(
+        (.name == $line)
+        or ((.tag_name // "") | test("^" + $line + "-rc\\.[0-9]+$"))
+      )
+  ]
 ')"
+
+candidate_count="$(echo "${candidates_json}" | jq 'length')"
+if [[ "${candidate_count}" -eq 0 ]]; then
+  existing_release_id=""
+else
+  draft_candidate_count="$(echo "${candidates_json}" | jq '[.[] | select(.draft == true)] | length')"
+  if [[ "${draft_candidate_count}" -gt 1 ]]; then
+    echo "Multiple draft releases found for ${release_line}; refusing to guess."
+    echo "${candidates_json}" | jq -r '.[] | select(.draft == true) | "- id=\(.id) name=\(.name) tag=\(.tag_name)"'
+    exit 1
+  fi
+
+  if [[ "${draft_candidate_count}" -eq 1 ]]; then
+    existing_release_id="$(echo "${candidates_json}" | jq -r '.[] | select(.draft == true) | .id')"
+  elif [[ "${candidate_count}" -eq 1 ]]; then
+    existing_release_id="$(echo "${candidates_json}" | jq -r '.[0].id')"
+  else
+    echo "Multiple non-draft releases matched ${release_line}; refusing to guess."
+    echo "${candidates_json}" | jq -r '.[] | "- id=\(.id) draft=\(.draft) name=\(.name) tag=\(.tag_name)"'
+    exit 1
+  fi
+fi
 
 if [[ -z "${existing_release_id}" ]]; then
   echo "Creating draft release '${release_line}' on tag '${TAG}'."
