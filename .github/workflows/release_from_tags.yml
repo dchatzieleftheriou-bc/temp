@@ -1,0 +1,52 @@
+name: Release From Tags
+
+on:
+  push:
+    tags:
+      - 'v*-rc.*'
+  pull_request:
+    types: [closed]
+    branches:
+      - dev
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  upsert_draft_release:
+    name: Upsert Draft Release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-upsert-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: ./.github/scripts/release/upsert_draft_release.sh
+
+  publish_release_on_merge:
+    name: Publish Release On Merge
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-publish-${{ github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Publish existing draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: ./.github/scripts/release/publish_release_on_merge.sh
