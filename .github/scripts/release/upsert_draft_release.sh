@@ -14,19 +14,21 @@ echo "Release line: ${release_line}"
 
 git fetch --tags --force
 
-series_tags="$(git tag -l "${release_line}-rc.*" | sort -V)"
-if [[ -z "${series_tags}" ]]; then
-  echo "No tags found for ${release_line}; nothing to do."
+all_rc_tags="$(git tag -l "v*-rc.*" | sort -V)"
+if [[ -z "${all_rc_tags}" ]]; then
+  echo "No RC tags found; nothing to do."
   exit 1
 fi
 
-first_series_tag="$(echo "${series_tags}" | head -n1)"
-all_tags="$(git tag --sort=v:refname)"
+if ! echo "${all_rc_tags}" | grep -Fxq "${TAG}"; then
+  echo "Current tag '${TAG}' was not found in repository tags."
+  exit 1
+fi
 
-baseline_prev_tag="$(
-  echo "${all_tags}" | awk -v first="${first_series_tag}" '
+previous_tag="$(
+  echo "${all_rc_tags}" | awk -v current="${TAG}" '
     {
-      if ($0 == first) {
+      if ($0 == current) {
         print prev
         exit
       }
@@ -35,9 +37,11 @@ baseline_prev_tag="$(
   '
 )"
 
-if [[ -n "${baseline_prev_tag}" ]]; then
-  payload="$(jq -n --arg tag "${TAG}" --arg prev "${baseline_prev_tag}" '{tag_name: $tag, previous_tag_name: $prev}')"
+if [[ -n "${previous_tag}" ]]; then
+  echo "Generating notes from previous tag: ${previous_tag}"
+  payload="$(jq -n --arg tag "${TAG}" --arg prev "${previous_tag}" '{tag_name: $tag, previous_tag_name: $prev}')"
 else
+  echo "No previous RC tag found; generating notes from repository start."
   payload="$(jq -n --arg tag "${TAG}" '{tag_name: $tag}')"
 fi
 
